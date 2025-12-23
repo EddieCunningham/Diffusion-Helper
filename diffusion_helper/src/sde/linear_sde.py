@@ -2,7 +2,9 @@ import torch
 from typing import Optional, Tuple, Union
 from jaxtyping import Scalar
 import abc
+import cola
 from diffusion_helper.src.matrix.matrix import SquareMatrix
+from diffusion_helper.src.matrix.tags import TAGS
 from diffusion_helper.src.gaussian.transition import GaussianTransition
 import diffusion_helper.src.util as util
 from diffusion_helper.src.sde.ode_sde_simulation import ode_solve, ODESolverParams
@@ -157,16 +159,56 @@ class AbstractLinearTimeInvariantSDE(AbstractLinearSDE, abc.ABC):
     """
     D = self.dim
 
+    Fop = self.F.mat
+    Lop = self.L.mat
+    dtype = self.F.mat.dtype
+    device = self.F.mat.device
+    dt = torch.as_tensor(t - s, dtype=dtype, device=device)
+
+    if isinstance(Fop, cola.ops.ScalarMul) and isinstance(Lop, cola.ops.ScalarMul):
+      f = torch.as_tensor(Fop.c, dtype=dtype, device=device)
+      l = torch.as_tensor(Lop.c, dtype=dtype, device=device)
+
+      A = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.ScalarMul(torch.exp(f * dt), shape=(D, D), dtype=dtype, device=device))
+
+      denom = 2.0 * f
+      Sigma_c = torch.where(
+        torch.abs(denom) < 1e-12,
+        (l * l) * dt,
+        (l * l) * (torch.exp(2.0 * f * dt) - 1.0) / denom,
+      )
+      Sigma = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.ScalarMul(Sigma_c, shape=(D, D), dtype=dtype, device=device))
+      Sigma = util.where(torch.abs(Sigma_c) < 1e-12, Sigma.set_zero(), Sigma)
+      u = torch.zeros((D,), dtype=dtype, device=device)
+      return GaussianTransition(A, u, Sigma)
+
+    if isinstance(Fop, cola.ops.Diagonal) and isinstance(Lop, cola.ops.Diagonal):
+      f = Fop.diag.to(dtype=dtype, device=device)
+      l = Lop.diag.to(dtype=dtype, device=device)
+
+      A = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.Diagonal(torch.exp(f * dt)))
+
+      denom = 2.0 * f
+      Sigma_diag = torch.where(
+        torch.abs(denom) < 1e-12,
+        (l * l) * dt,
+        (l * l) * (torch.exp(2.0 * f * dt) - 1.0) / denom,
+      )
+      Sigma = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.Diagonal(Sigma_diag))
+      Sigma = util.where(torch.abs(Sigma_diag).max() < 1e-12, Sigma.set_zero(), Sigma)
+      u = torch.zeros((D,), dtype=dtype, device=device)
+      return GaussianTransition(A, u, Sigma)
+
     F = self.F.to_dense()
     L = self.L.to_dense()
-    dt = torch.as_tensor(t - s, dtype=F.dtype, device=F.device)
     Q = L @ L.T
 
-    zero = torch.zeros((D, D), dtype=F.dtype, device=F.device)
+    zero = torch.zeros((D, D), dtype=dtype, device=device)
     top = torch.concatenate([F, Q], dim=1)
     bottom = torch.concatenate([zero, -F.T], dim=1)
     M = torch.concatenate([top, bottom], dim=0)
 
+    # Use torch expm for this block matrix since it can be non diagonalizable
     Phi = torch.linalg.matrix_exp(M * dt)
     A_dense = Phi[:D, :D]
     Sigma_AinvT = Phi[:D, D:]
@@ -176,7 +218,7 @@ class AbstractLinearTimeInvariantSDE(AbstractLinearSDE, abc.ABC):
     A = SquareMatrix.from_dense(A_dense)
     Sigma = SquareMatrix.from_dense(Sigma_dense)
     Sigma = util.where(torch.abs(Sigma_dense).max() < 1e-8, Sigma.set_zero(), Sigma)
-    u = torch.zeros((D,), dtype=F.dtype, device=F.device)
+    u = torch.zeros((D,), dtype=dtype, device=device)
     return GaussianTransition(A, u, Sigma)
 
 ################################################################################################################

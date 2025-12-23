@@ -61,6 +61,9 @@ class SquareMatrix(TensorClass):
     return SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.Identity(self.shape[0], dtype=self.mat.dtype))
 
   def set_symmetric(self) -> 'SquareMatrix':
+    # Preserve simple symmetric structures where possible
+    if isinstance(self.mat, (cola.ops.Diagonal, cola.ops.ScalarMul)):
+      return self
     return SquareMatrix(tags=self.tags, mat=cola.PSD(0.5*(self.mat + self.mat.T)))
 
   def set_zero(self) -> 'SquareMatrix':

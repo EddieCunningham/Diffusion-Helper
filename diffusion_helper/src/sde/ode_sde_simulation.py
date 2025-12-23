@@ -156,8 +156,18 @@ def ode_solve(
   # Create the initial value problem
   problem = to.InitialValueProblem(y0=x0, t_eval=save_times)
 
+  if params.solver == "euler" and not params.using_constant_step_size():
+    raise ValueError("Euler requires fixed step size controller")
+
+  dt0 = None
+  if params.using_constant_step_size():
+    diffs = torch.diff(save_times, dim=1)
+    dt0 = diffs.abs().min(dim=1).values
+    dt0 = torch.where(dt0 == 0, torch.ones_like(dt0) * 1e-6, dt0)
+    dt0 = dt0.to(dtype=save_times.dtype, device=save_times.device)
+
   # Solve
-  solution = solver.solve(problem)
+  solution = solver.solve(problem, term=term, dt0=dt0)
 
   # Extract results - solution.ys has shape (batch, time, features)
   ys = solution.ys

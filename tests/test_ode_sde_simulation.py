@@ -242,8 +242,21 @@ class TestODESolve:
 class TestODESolveSolversAndControllers:
   """Test each ODE solver and step size controller end to end"""
 
-  @pytest.mark.parametrize("solver", ["dopri5", "tsit5", "heun", "euler"])
-  @pytest.mark.parametrize("stepsize_controller", ["integral", "pid", "fixed"])
+  @pytest.mark.parametrize(
+    "solver,stepsize_controller",
+    [
+      ("dopri5", "integral"),
+      ("dopri5", "pid"),
+      ("dopri5", "fixed"),
+      ("tsit5", "integral"),
+      ("tsit5", "pid"),
+      ("tsit5", "fixed"),
+      ("heun", "integral"),
+      ("heun", "pid"),
+      ("heun", "fixed"),
+      ("euler", "fixed"),
+    ],
+  )
   def test_ode_solve_across_solvers_and_controllers(self, solver, stepsize_controller):
     def dynamics(t, x):
       return -x
@@ -266,9 +279,13 @@ class TestODESolveSolversAndControllers:
 
     expected = x0 * torch.exp(-save_times).unsqueeze(-1)
 
-    # Fixed step methods with euler can be noticeably less accurate for coarse grids
-    # This stays tight enough to catch wiring bugs while remaining stable
     if solver == "euler" and stepsize_controller == "fixed":
+      dt = save_times[1] - save_times[0]
+      n = torch.arange(len(save_times), dtype=save_times.dtype)
+      expected = x0 * torch.pow(1.0 - dt, n).unsqueeze(-1)
+
+    # Fixed step methods can be less accurate for coarse grids
+    if stepsize_controller == "fixed":
       rtol = 5e-3
       atol = 5e-4
     else:

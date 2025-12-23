@@ -17,6 +17,8 @@ from diffusion_helper.src.sde.ode_sde_simulation import SDESolverParams, sde_sam
 from diffusion_helper.src.matrix.matrix import SquareMatrix
 import diffusion_helper.src.util as util
 from diffusion_helper.src.gaussian.gaussian import StandardGaussian
+import cola
+from diffusion_helper.src.matrix.tags import TAGS
 
 
 class _BrownianMotion(AbstractLinearTimeInvariantSDE):
@@ -175,6 +177,66 @@ class TestLinearSDETransitions:
 
     assert torch.allclose(general.A.to_dense(), lti.A.to_dense(), rtol=2e-6, atol=2e-8)
     assert torch.allclose(general.Sigma.to_dense(), lti.Sigma.to_dense(), rtol=2e-6, atol=2e-8)
+
+  def test_lti_scalar_matrices_use_scalar_mul_and_closed_form(self):
+    class _LTI(AbstractLinearTimeInvariantSDE):
+      def __init__(self, F: SquareMatrix, L: SquareMatrix):
+        self.F = F
+        self.L = L
+
+    dim = 5
+    dtype = torch.float64
+    f = torch.tensor(-0.7, dtype=dtype)
+    l = torch.tensor(0.4, dtype=dtype)
+    F = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.ScalarMul(f, shape=(dim, dim), dtype=dtype))
+    L = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.ScalarMul(l, shape=(dim, dim), dtype=dtype))
+    sde = _LTI(F=F, L=L)
+
+    s, t = 0.0, 1.3
+    dt = torch.tensor(t - s, dtype=dtype)
+    trans = sde.get_transition_distribution(s, t)
+
+    assert isinstance(trans.A.mat, cola.ops.ScalarMul)
+    assert isinstance(trans.Sigma.mat, cola.ops.ScalarMul)
+
+    expected_A = torch.exp(f * dt) * torch.eye(dim, dtype=dtype)
+    Sigma_c = (l * l) * (torch.exp(2.0 * f * dt) - 1.0) / (2.0 * f)
+    expected_Sigma = Sigma_c * torch.eye(dim, dtype=dtype)
+
+    assert torch.allclose(trans.A.to_dense(), expected_A, rtol=1e-12, atol=1e-12)
+    assert torch.allclose(trans.Sigma.to_dense(), expected_Sigma, rtol=1e-12, atol=1e-12)
+
+  def test_lti_diagonal_matrices_use_diagonal_and_closed_form(self):
+    class _LTI(AbstractLinearTimeInvariantSDE):
+      def __init__(self, F: SquareMatrix, L: SquareMatrix):
+        self.F = F
+        self.L = L
+
+    dim = 4
+    dtype = torch.float64
+    f = torch.tensor([-0.5, -0.2, 0.0, -1.1], dtype=dtype)
+    l = torch.tensor([0.4, 0.3, 0.2, 0.1], dtype=dtype)
+    F = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.Diagonal(f))
+    L = SquareMatrix(tags=TAGS.no_tags, mat=cola.ops.Diagonal(l))
+    sde = _LTI(F=F, L=L)
+
+    s, t = 0.0, 0.9
+    dt = torch.tensor(t - s, dtype=dtype)
+    trans = sde.get_transition_distribution(s, t)
+
+    assert isinstance(trans.A.mat, cola.ops.Diagonal)
+    assert isinstance(trans.Sigma.mat, cola.ops.Diagonal)
+
+    expected_A_diag = torch.exp(f * dt)
+    denom = 2.0 * f
+    expected_Sigma_diag = torch.where(
+      torch.abs(denom) < 1e-12,
+      (l * l) * dt,
+      (l * l) * (torch.exp(2.0 * f * dt) - 1.0) / denom,
+    )
+
+    assert torch.allclose(torch.diagonal(trans.A.to_dense()), expected_A_diag, rtol=1e-12, atol=1e-12)
+    assert torch.allclose(torch.diagonal(trans.Sigma.to_dense()), expected_Sigma_diag, rtol=1e-12, atol=1e-12)
 
   def test_samples_match_transition_distribution_brownian_diagonal_diffusion(self):
     torch.manual_seed(0)
