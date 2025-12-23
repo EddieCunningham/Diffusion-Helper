@@ -274,7 +274,7 @@ def plot_series(self,
     effective_alpha = max_alpha  # Use max_alpha for single samples
 
   # Get dimensions from first sample
-  num_dims = samples_to_plot[0].values.shape[-1]
+  num_dims = samples_to_plot[0].vals.shape[-1]
 
   # Check if we need to create new axes or use provided ones
   create_new_figure = fig is None or axes is None
@@ -315,7 +315,7 @@ def plot_series(self,
   masks_list = []
 
   for sample in samples_to_plot:
-    values_list.append(np.array(sample.values.detach().cpu().numpy()))
+    values_list.append(np.array(sample.vals.detach().cpu().numpy()))
     masks_list.append(np.array(sample.mask.detach().cpu().numpy()))
 
   # Calculate y-axis ranges
@@ -332,7 +332,7 @@ def plot_series(self,
     # Plot all samples
     for i, sample in enumerate(samples_to_plot):
       times = np.array(sample.times.detach().cpu().numpy())
-      values = np.array(sample.values.detach().cpu().numpy())
+      values = np.array(sample.vals.detach().cpu().numpy())
       mask = np.array(sample.mask.detach().cpu().numpy())
 
       # Only add a legend entry for the first dimension and first sample (or all samples case)
@@ -455,9 +455,9 @@ def plot_multiple_series(series_list: List['TimeSeries'], # type: ignore
   dims_list = []
   for series in series_list:
     if series.batch_size is not None and isinstance(series.batch_size, int) and plot_all_samples:
-      dims_list.append(series[0].values.shape[-1])
+      dims_list.append(series[0].vals.shape[-1])
     else:
-      dims_list.append(series.values.shape[-1])
+      dims_list.append(series.vals.shape[-1])
 
   # Use either the minimum or maximum dimensions based on use_max_dims flag
   plot_dims = max(dims_list) if use_max_dims else min(dims_list)
@@ -502,7 +502,7 @@ def plot_multiple_series(series_list: List['TimeSeries'], # type: ignore
       # Collect from all samples in batch
       for j in range(series.batch_size):
         sample = series[j]
-        all_values_list.append(np.array(sample.values.detach().cpu().numpy()))
+        all_values_list.append(np.array(sample.vals.detach().cpu().numpy()))
         all_masks_list.append(np.array(sample.mask.detach().cpu().numpy()))
     else:
       # Single series or specific index
@@ -510,7 +510,7 @@ def plot_multiple_series(series_list: List['TimeSeries'], # type: ignore
       if is_batched and index is not None and index != 'all':
         current_series = series[index]
 
-      all_values_list.append(np.array(current_series.values.detach().cpu().numpy()))
+      all_values_list.append(np.array(current_series.vals.detach().cpu().numpy()))
       all_masks_list.append(np.array(current_series.mask.detach().cpu().numpy()))
 
   # Calculate y-axis ranges for all dimensions at once
@@ -540,7 +540,7 @@ def plot_multiple_series(series_list: List['TimeSeries'], # type: ignore
       ax = axes[k, i]
 
       # Skip plotting if this dimension doesn't exist for this series
-      if k >= samples_to_plot[0].values.shape[-1]:
+      if k >= samples_to_plot[0].vals.shape[-1]:
         # Hide tick labels for empty axes
         ax.set_xticks([])
         ax.set_yticks([])
@@ -553,7 +553,7 @@ def plot_multiple_series(series_list: List['TimeSeries'], # type: ignore
       # Plot all samples for this series
       for j, sample in enumerate(samples_to_plot):
         times = np.array(sample.times)
-        values = np.array(sample.values)
+        values = np.array(sample.vals)
         mask = np.array(sample.mask)
 
         # Add legend only for first dimension and first sample of each series
