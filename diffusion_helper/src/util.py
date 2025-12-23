@@ -57,16 +57,13 @@ def empirical_dist(xts: torch.Tensor) -> 'StandardGaussian':
 def w2_distance(gaussian1: 'StandardGaussian',
                 gaussian2: 'StandardGaussian') -> Scalar:
   """Compute the Wasserstein-2 distance between two Gaussians"""
-  try:
+  if hasattr(gaussian1, "to_std"):
     gaussian1 = gaussian1.to_std()
-  except:
-    pass
-  try:
+  if hasattr(gaussian2, "to_std"):
     gaussian2 = gaussian2.to_std()
-  except:
-    pass
-  cov1 = gaussian1.Sigma.as_matrix()
-  cov2 = gaussian2.Sigma.as_matrix()
+
+  cov1 = gaussian1.Sigma.to_dense()
+  cov2 = gaussian2.Sigma.to_dense()
   mu1 = gaussian1.mu
   mu2 = gaussian2.mu
 
